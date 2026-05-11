@@ -1,0 +1,361 @@
+import { useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import PDFViewer from '../components/PDFViewer'
+import Leaderboard from '../components/Leaderboard'
+import { useSessionWS } from '../hooks/useSessionWS'
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+export default function Moderator() {
+  const [searchParams] = useSearchParams()
+  const [sessionCode, setSessionCode] = useState(() => searchParams.get('session'))
+  const [sessionName, setSessionName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  const [showServerFiles, setShowServerFiles] = useState(false)
+  const [serverFiles, setServerFiles] = useState([])
+  const [loadingServerFiles, setLoadingServerFiles] = useState(false)
+  const fileInputRef = useRef()
+
+  const { session, connected } = useSessionWS(sessionCode)
+
+  async function createSession(e) {
+    e.preventDefault()
+    setCreating(true)
+    try {
+      const data = await api('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: sessionName.trim() }),
+      })
+      setSessionCode(data.code)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function uploadFiles(files) {
+    for (const file of files) {
+      const form = new FormData()
+      form.append('file', file)
+      await fetch(`/api/sessions/${sessionCode}/resumes`, { method: 'POST', body: form })
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function post(path) {
+    return fetch(`/api/sessions/${sessionCode}${path}`, { method: 'POST' })
+  }
+
+  function del(path) {
+    return fetch(`/api/sessions/${sessionCode}${path}`, { method: 'DELETE' })
+  }
+
+  async function openServerFiles() {
+    setShowServerFiles(v => !v)
+    if (showServerFiles) return
+    setLoadingServerFiles(true)
+    try {
+      const files = await api('/api/uploads')
+      setServerFiles(files)
+    } finally {
+      setLoadingServerFiles(false)
+    }
+  }
+
+  async function addFromServer(filename) {
+    await fetch(`/api/sessions/${sessionCode}/resumes/from-server`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename }),
+    })
+    const files = await api('/api/uploads')
+    setServerFiles(files)
+  }
+
+  function copyCode() {
+    navigator.clipboard.writeText(sessionCode)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  if (!sessionCode) {
+    return (
+      <div className="welcome-screen">
+        <h1>Resume Screening</h1>
+        <p>Give this session a name so it's easy to identify later.</p>
+        <form className="join-card" onSubmit={createSession}>
+          <input
+            placeholder="Session name (e.g. Backend Engineer - May 2026)"
+            value={sessionName}
+            onChange={e => setSessionName(e.target.value)}
+            autoFocus
+            required
+          />
+          <button type="submit" className="btn-primary" disabled={!sessionName.trim() || creating}>
+            {creating ? 'Creating...' : 'Create Session'}
+          </button>
+        </form>
+      </div>
+    )
+  }
+
+  const resumes = session?.resumes ?? []
+  const panelists = session?.panelists ?? []
+  const activeResume = resumes.find(r => r.id === session?.active_resume_id) ?? null
+  const pending = resumes.filter(r => r.status === 'pending')
+  const reviewed = resumes.filter(r => r.status === 'reviewed' && r.id !== activeResume?.id)
+  const votingOpen = session?.voting_open ?? false
+  const voteCount = activeResume?.vote_count ?? 0
+  const totalPanelists = panelists.length
+  const joinUrl = `${window.location.origin}/join`
+
+  return (
+    <div className="mod-layout">
+      <header className="mod-topbar">
+        <h1>{session?.name || 'Resume Screening'}</h1>
+        <div className="session-badge">
+          <span className="code">{sessionCode}</span>
+          <span className="join-hint">{joinUrl}</span>
+          <button className="btn-ghost btn-sm" onClick={copyCode}>
+            {copied ? 'Copied' : 'Copy Code'}
+          </button>
+        </div>
+        {resumes.filter(r => r.revealed).length > 0 && (
+          <button className="btn-ghost btn-sm" onClick={() => setShowLeaderboard(v => !v)}>
+            {showLeaderboard ? 'Back to Session' : `Leaderboard (${resumes.filter(r => r.revealed).length})`}
+          </button>
+        )}
+        <span className={`connection-dot ${connected ? 'ok' : 'off'}`} title={connected ? 'Connected' : 'Reconnecting...'} />
+      </header>
+
+      <aside className="sidebar">
+        <div className="sidebar-section">
+          <h3>Panelists ({panelists.length})</h3>
+          <ul className="panelist-list">
+            {panelists.length === 0
+              ? <li className="empty">Nobody joined yet</li>
+              : panelists.map(name => <li key={name}>{name}</li>)}
+          </ul>
+        </div>
+
+        <div className="sidebar-section" style={{ flex: 1 }}>
+          <h3>Resume Queue</h3>
+          <div className="upload-btn-wrapper">
+            <button className="btn-primary" onClick={() => fileInputRef.current?.click()}>
+              Upload PDFs
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf"
+              multiple
+              hidden
+              onChange={e => uploadFiles(Array.from(e.target.files))}
+            />
+          </div>
+
+          <div style={{ marginBottom: 10 }}>
+            <button className="btn-ghost" style={{ width: '100%' }} onClick={openServerFiles}>
+              {showServerFiles ? 'Hide Server Files' : 'Browse Server Files'}
+            </button>
+          </div>
+
+          {showServerFiles && (() => {
+            const sessionFilenames = new Set(resumes.map(r => r.filename))
+            const available = serverFiles.filter(f => !sessionFilenames.has(f.filename))
+            return (
+              <div className="server-files-panel">
+                {loadingServerFiles && <p className="server-files-empty">Loading...</p>}
+                {!loadingServerFiles && available.length === 0 && (
+                  <p className="server-files-empty">No additional files on server.</p>
+                )}
+                {available.map(f => (
+                  <div key={f.filename} className="server-file-item">
+                    <div className="server-file-info">
+                      <span className="server-file-name" title={f.original_name}>{f.original_name}</span>
+                      <span className="server-file-date">
+                        {new Date(f.uploaded_at * 1000).toLocaleDateString(undefined, {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                          hour: 'numeric', minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                    <button className="btn-ghost btn-sm" onClick={() => addFromServer(f.filename)}>
+                      Add
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+
+          <div className="queue-list">
+            {activeResume && (
+              <>
+                <div className="queue-group-label">Active</div>
+                <div className="queue-item active">
+                  <span className="queue-item-name" title={activeResume.original_name}>
+                    {activeResume.original_name}
+                  </span>
+                  {activeResume.average != null && (
+                    <span className="queue-item-avg">{activeResume.average} avg</span>
+                  )}
+                </div>
+              </>
+            )}
+
+            {pending.length > 0 && (
+              <>
+                <div className="queue-group-label">Pending ({pending.length})</div>
+                {pending.map(r => (
+                  <div key={r.id} className="queue-item pending">
+                    <span className="queue-item-name" title={r.original_name}>{r.original_name}</span>
+                    <div className="queue-item-actions">
+                      <button
+                        className="btn-ghost btn-sm"
+                        onClick={() => post(`/resumes/${r.id}/activate`)}
+                      >
+                        Open
+                      </button>
+                      <button
+                        className="btn-ghost btn-sm"
+                        style={{ color: 'var(--red)' }}
+                        onClick={() => del(`/resumes/${r.id}`)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {reviewed.length > 0 && (
+              <>
+                <div className="queue-group-label">Reviewed ({reviewed.length})</div>
+                {reviewed.map(r => (
+                  <div key={r.id} className="queue-item reviewed">
+                    <span className="queue-item-name" title={r.original_name}>{r.original_name}</span>
+                    <div className="queue-item-actions">
+                      {r.average != null && <span className="queue-item-avg">{r.average} avg</span>}
+                      <button
+                        className="btn-ghost btn-sm"
+                        onClick={() => post(`/resumes/${r.id}/activate`)}
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {resumes.length === 0 && (
+              <p style={{ color: 'var(--gray-400)', fontSize: 12, marginTop: 8 }}>
+                Upload PDFs to build the queue.
+              </p>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        {showLeaderboard ? (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <Leaderboard resumes={resumes} sessionCode={sessionCode} />
+          </div>
+        ) : activeResume ? (
+          <>
+            <div className="resume-toolbar">
+              <h2>{activeResume.original_name}</h2>
+
+              <div className="controls-row">
+                {!votingOpen && !activeResume.revealed && (
+                  <button className="btn-primary" onClick={() => post('/voting/open')}>
+                    Open Voting
+                  </button>
+                )}
+                {votingOpen && (
+                  <>
+                    <span className="vote-counter">
+                      {voteCount} / {totalPanelists} submitted
+                    </span>
+                    <button className="btn-ghost" onClick={() => post('/voting/close')}>
+                      Close Voting
+                    </button>
+                    <button className="btn-success" onClick={() => post('/reveal')}>
+                      Reveal Results
+                    </button>
+                  </>
+                )}
+                {activeResume.revealed && !votingOpen && (
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      const next = pending[0]
+                      if (next) post(`/resumes/${next.id}/activate`)
+                      else post('/deactivate')
+                    }}
+                  >
+                    {pending.length > 0 ? 'Next Resume' : 'View Results'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {activeResume.revealed && (
+              <div className="revealed-bar" style={{ margin: '0 20px 12px' }}>
+                <span>Results:</span>
+                <div className="score-chips">
+                  {Object.entries(activeResume.votes).map(([name, score]) => (
+                    <span key={name} className="score-chip">
+                      {name}: <span className="stars">{'★'.repeat(score)}</span>
+                    </span>
+                  ))}
+                </div>
+                {activeResume.average != null && (
+                  <span className="avg">Avg: {activeResume.average}</span>
+                )}
+              </div>
+            )}
+
+            {votingOpen && totalPanelists > 0 && (
+              <div style={{ padding: '0 20px 12px' }}>
+                <div className="progress-bar-wrap">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${(voteCount / totalPanelists) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <PDFViewer url={`/uploads/${activeResume.filename}`} />
+          </>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            {reviewed.length > 0 ? (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <Leaderboard resumes={resumes} sessionCode={sessionCode} />
+              </div>
+            ) : (
+              <div className="empty-main">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+                <p>Select a resume from the queue to begin.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}

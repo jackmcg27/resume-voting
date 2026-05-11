@@ -1,0 +1,20 @@
+# Python
+.venv
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+
+# Frontend build output
+static/
+
+# Runtime data
+uploads/
+
+# Node
+frontend/node_modules/
+
+# Tools
+.claude

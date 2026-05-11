@@ -1,80 +1,109 @@
+"""
+Tests for socket.io event handlers.
+
+Event handlers in app/events.py are plain async functions, so we call them
+directly and mock sio.emit / sio.enter_room to avoid needing a running server.
+"""
 import pytest
+from unittest.mock import ANY, AsyncMock
+
+from app import socket as socket_module
+from app.events import on_join_session, on_disconnect
+from app.store import sessions
 
 
-def test_connect_sends_initial_state(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        msg = ws.receive_json()
-        assert msg["type"] == "state"
-        assert msg["session"]["code"] == session_code
+@pytest.fixture(autouse=True)
+def mock_sio_methods(monkeypatch):
+    monkeypatch.setattr(socket_module.sio, 'emit', AsyncMock())
+    monkeypatch.setattr(socket_module.sio, 'enter_room', AsyncMock())
 
 
-def test_connect_to_unknown_session_is_rejected(client):
-    with pytest.raises(Exception):
-        with client.websocket_connect("/ws/NOPE99/c1") as ws:
-            ws.receive_json()
+# ---------------------------------------------------------------------------
+# join_session
+# ---------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_join_session_adds_panelist(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    assert 'Alice' in sessions[session_code].panelists
 
 
-def test_join_adds_panelist(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        ws.receive_json()  # initial state
-        ws.send_json({"type": "join", "name": "Alice"})
-        msg = ws.receive_json()  # broadcast after join
-        assert "Alice" in msg["session"]["panelists"]
+@pytest.mark.anyio
+async def test_join_session_enters_room(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    socket_module.sio.enter_room.assert_called_once_with('sid1', session_code)
 
 
-def test_join_empty_name_ignored(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        ws.receive_json()
-        ws.send_json({"type": "join", "name": "   "})
-        # No state broadcast expected — just close cleanly
-
-    session = client.get(f"/api/sessions/{session_code}").json()
-    assert session["panelists"] == []
+@pytest.mark.anyio
+async def test_join_session_broadcasts_state_to_room(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    socket_module.sio.emit.assert_called_with('state', ANY, room=session_code)
 
 
-def test_join_duplicate_name_ignored(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        ws.receive_json()
-        ws.send_json({"type": "join", "name": "Alice"})
-        ws.receive_json()  # broadcast for first join
-
-        ws.send_json({"type": "join", "name": "Alice"})
-        # Check while still connected — disconnect handler would remove Alice
-        session = client.get(f"/api/sessions/{session_code}").json()
-        assert session["panelists"].count("Alice") == 1
+@pytest.mark.anyio
+async def test_join_session_unknown_code_does_nothing():
+    await on_join_session('sid1', {'code': 'NOPE99', 'name': 'Alice'})
+    socket_module.sio.enter_room.assert_not_called()
+    socket_module.sio.emit.assert_not_called()
 
 
-def test_ping_returns_pong(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        ws.receive_json()
-        ws.send_json({"type": "ping"})
-        assert ws.receive_json() == {"type": "pong"}
+@pytest.mark.anyio
+async def test_join_session_no_name_sends_state_to_caller_only(session_code):
+    """Moderator connects without a name — should receive state but not be listed as panelist."""
+    await on_join_session('sid1', {'code': session_code, 'name': None})
+    assert len(sessions[session_code].panelists) == 0
+    socket_module.sio.emit.assert_called_once_with('state', ANY, to='sid1')
 
 
-def test_disconnect_removes_panelist(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws:
-        ws.receive_json()
-        ws.send_json({"type": "join", "name": "Alice"})
-        ws.receive_json()
-    # Context manager closed — panelist should be removed on disconnect
-
-    session = client.get(f"/api/sessions/{session_code}").json()
-    assert "Alice" not in session["panelists"]
+@pytest.mark.anyio
+async def test_join_session_duplicate_name_not_re_registered(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    await on_join_session('sid2', {'code': session_code, 'name': 'Alice'})
+    assert sessions[session_code].panelists['Alice'].client_id == 'sid1'
 
 
-def test_multiple_clients_each_receive_broadcasts(client, session_code):
-    with client.websocket_connect(f"/ws/{session_code}/c1") as ws1:
-        ws1.receive_json()
-        ws1.send_json({"type": "join", "name": "Alice"})
-        ws1.receive_json()
+@pytest.mark.anyio
+async def test_join_session_stores_sid_as_client_id(session_code):
+    await on_join_session('sid-abc', {'code': session_code, 'name': 'Bob'})
+    assert sessions[session_code].panelists['Bob'].client_id == 'sid-abc'
 
-        with client.websocket_connect(f"/ws/{session_code}/c2") as ws2:
-            ws2.receive_json()  # initial state for c2
-            ws2.send_json({"type": "join", "name": "Bob"})
 
-            # Both clients get the broadcast
-            msg1 = ws1.receive_json()
-            msg2 = ws2.receive_json()
+# ---------------------------------------------------------------------------
+# disconnect
+# ---------------------------------------------------------------------------
 
-    assert "Bob" in msg1["session"]["panelists"]
-    assert "Bob" in msg2["session"]["panelists"]
+@pytest.mark.anyio
+async def test_disconnect_removes_panelist(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    assert 'Alice' in sessions[session_code].panelists
+
+    await on_disconnect('sid1')
+    assert 'Alice' not in sessions[session_code].panelists
+
+
+@pytest.mark.anyio
+async def test_disconnect_broadcasts_after_removal(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    socket_module.sio.emit.reset_mock()
+
+    await on_disconnect('sid1')
+    socket_module.sio.emit.assert_called_with('state', ANY, room=session_code)
+
+
+@pytest.mark.anyio
+async def test_disconnect_unknown_sid_does_nothing(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    socket_module.sio.emit.reset_mock()
+
+    await on_disconnect('sid-unknown')
+    socket_module.sio.emit.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_disconnect_only_removes_matching_panelist(session_code):
+    await on_join_session('sid1', {'code': session_code, 'name': 'Alice'})
+    await on_join_session('sid2', {'code': session_code, 'name': 'Bob'})
+
+    await on_disconnect('sid1')
+    assert 'Alice' not in sessions[session_code].panelists
+    assert 'Bob' in sessions[session_code].panelists

@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.store import sessions, connections
+from app.store import sessions
 
 # Smallest valid-enough PDF for upload tests — the server stores whatever bytes it receives
 MINIMAL_PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n%%EOF"
@@ -12,10 +12,8 @@ MINIMAL_PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n%%EOF"
 def clear_store():
     """Reset all in-memory state before and after every test."""
     sessions.clear()
-    connections.clear()
     yield
     sessions.clear()
-    connections.clear()
 
 
 @pytest.fixture

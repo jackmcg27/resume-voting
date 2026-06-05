@@ -17,9 +17,8 @@ export default function Moderator() {
   const [creating, setCreating] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showLeaderboard, setShowLeaderboard] = useState(false)
-  const [showServerFiles, setShowServerFiles] = useState(false)
-  const [serverFiles, setServerFiles] = useState([])
-  const [loadingServerFiles, setLoadingServerFiles] = useState(false)
+  const [localNames, setLocalNames] = useState({})
+  const [votingStyle, setVotingStyle] = useState('stars')
   const fileInputRef = useRef()
 
   const { session, connected } = useSessionWS(sessionCode)
@@ -31,7 +30,7 @@ export default function Moderator() {
       const data = await api('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: sessionName.trim() }),
+        body: JSON.stringify({ name: sessionName.trim(), voting_style: votingStyle }),
       })
       setSessionCode(data.code)
     } finally {
@@ -56,26 +55,26 @@ export default function Moderator() {
     return fetch(`/api/sessions/${sessionCode}${path}`, { method: 'DELETE' })
   }
 
-  async function openServerFiles() {
-    setShowServerFiles(v => !v)
-    if (showServerFiles) return
-    setLoadingServerFiles(true)
-    try {
-      const files = await api('/api/uploads')
-      setServerFiles(files)
-    } finally {
-      setLoadingServerFiles(false)
-    }
+  async function saveCandidateName(resumeId, name) {
+    await fetch(`/api/sessions/${sessionCode}/resumes/${resumeId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidate_name: name }),
+    })
   }
 
-  async function addFromServer(filename) {
-    await fetch(`/api/sessions/${sessionCode}/resumes/from-server`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename }),
-    })
-    const files = await api('/api/uploads')
-    setServerFiles(files)
+  function getLocalName(resume) {
+    return localNames[resume.id] !== undefined ? localNames[resume.id] : resume.candidate_name
+  }
+
+  function displayName(resume) {
+    return resume.candidate_name || resume.original_name
+  }
+
+  function formatAvg(avg, style) {
+    if (avg == null) return null
+    if (style === 'thumbs') return `${Math.round(avg * 100)}% up`
+    return `${avg} avg`
   }
 
   function copyCode() {
@@ -97,6 +96,25 @@ export default function Moderator() {
             autoFocus
             required
           />
+          <div className="voting-style-picker">
+            <label className="voting-style-label">Voting style</label>
+            <div className="voting-style-options">
+              {[
+                { value: 'stars',   label: '★ 1–5 Stars' },
+                { value: 'thumbs',  label: '👍 Thumbs' },
+                { value: 'numeric', label: '# 1–10 Score' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`voting-style-btn${votingStyle === opt.value ? ' selected' : ''}`}
+                  onClick={() => setVotingStyle(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <button type="submit" className="btn-primary" disabled={!sessionName.trim() || creating}>
             {creating ? 'Creating...' : 'Create Session'}
           </button>
@@ -111,6 +129,7 @@ export default function Moderator() {
   const pending = resumes.filter(r => r.status === 'pending')
   const reviewed = resumes.filter(r => r.status === 'reviewed' && r.id !== activeResume?.id)
   const votingOpen = session?.voting_open ?? false
+  const sessionVotingStyle = session?.voting_style ?? 'stars'
   const voteCount = activeResume?.vote_count ?? 0
   const totalPanelists = panelists.length
   const joinUrl = `${window.location.origin}/join`
@@ -160,51 +179,24 @@ export default function Moderator() {
             />
           </div>
 
-          <div style={{ marginBottom: 10 }}>
-            <button className="btn-ghost" style={{ width: '100%' }} onClick={openServerFiles}>
-              {showServerFiles ? 'Hide Server Files' : 'Browse Server Files'}
-            </button>
-          </div>
-
-          {showServerFiles && (() => {
-            const sessionFilenames = new Set(resumes.map(r => r.filename))
-            const available = serverFiles.filter(f => !sessionFilenames.has(f.filename))
-            return (
-              <div className="server-files-panel">
-                {loadingServerFiles && <p className="server-files-empty">Loading...</p>}
-                {!loadingServerFiles && available.length === 0 && (
-                  <p className="server-files-empty">No additional files on server.</p>
-                )}
-                {available.map(f => (
-                  <div key={f.filename} className="server-file-item">
-                    <div className="server-file-info">
-                      <span className="server-file-name" title={f.original_name}>{f.original_name}</span>
-                      <span className="server-file-date">
-                        {new Date(f.uploaded_at * 1000).toLocaleDateString(undefined, {
-                          month: 'short', day: 'numeric', year: 'numeric',
-                          hour: 'numeric', minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                    <button className="btn-ghost btn-sm" onClick={() => addFromServer(f.filename)}>
-                      Add
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )
-          })()}
-
           <div className="queue-list">
             {activeResume && (
               <>
                 <div className="queue-group-label">Active</div>
                 <div className="queue-item active">
-                  <span className="queue-item-name" title={activeResume.original_name}>
-                    {activeResume.original_name}
-                  </span>
+                  <input
+                    className="candidate-name-input"
+                    value={getLocalName(activeResume)}
+                    onChange={e => setLocalNames(prev => ({ ...prev, [activeResume.id]: e.target.value }))}
+                    onBlur={e => {
+                      saveCandidateName(activeResume.id, e.target.value)
+                      setLocalNames(prev => { const n = { ...prev }; delete n[activeResume.id]; return n })
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                    placeholder={activeResume.original_name}
+                  />
                   {activeResume.average != null && (
-                    <span className="queue-item-avg">{activeResume.average} avg</span>
+                    <span className="queue-item-avg">{formatAvg(activeResume.average, sessionVotingStyle)}</span>
                   )}
                 </div>
               </>
@@ -215,7 +207,17 @@ export default function Moderator() {
                 <div className="queue-group-label">Pending ({pending.length})</div>
                 {pending.map(r => (
                   <div key={r.id} className="queue-item pending">
-                    <span className="queue-item-name" title={r.original_name}>{r.original_name}</span>
+                    <input
+                      className="candidate-name-input"
+                      value={getLocalName(r)}
+                      onChange={e => setLocalNames(prev => ({ ...prev, [r.id]: e.target.value }))}
+                      onBlur={e => {
+                        saveCandidateName(r.id, e.target.value)
+                        setLocalNames(prev => { const n = { ...prev }; delete n[r.id]; return n })
+                      }}
+                      onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                      placeholder={r.original_name}
+                    />
                     <div className="queue-item-actions">
                       <button
                         className="btn-ghost btn-sm"
@@ -241,9 +243,19 @@ export default function Moderator() {
                 <div className="queue-group-label">Reviewed ({reviewed.length})</div>
                 {reviewed.map(r => (
                   <div key={r.id} className="queue-item reviewed">
-                    <span className="queue-item-name" title={r.original_name}>{r.original_name}</span>
+                    <input
+                      className="candidate-name-input"
+                      value={getLocalName(r)}
+                      onChange={e => setLocalNames(prev => ({ ...prev, [r.id]: e.target.value }))}
+                      onBlur={e => {
+                        saveCandidateName(r.id, e.target.value)
+                        setLocalNames(prev => { const n = { ...prev }; delete n[r.id]; return n })
+                      }}
+                      onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                      placeholder={r.original_name}
+                    />
                     <div className="queue-item-actions">
-                      {r.average != null && <span className="queue-item-avg">{r.average} avg</span>}
+                      {r.average != null && <span className="queue-item-avg">{formatAvg(r.average, sessionVotingStyle)}</span>}
                       <button
                         className="btn-ghost btn-sm"
                         onClick={() => post(`/resumes/${r.id}/activate`)}
@@ -268,12 +280,22 @@ export default function Moderator() {
       <main className="main-content">
         {showLeaderboard ? (
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            <Leaderboard resumes={resumes} sessionCode={sessionCode} />
+            <Leaderboard resumes={resumes} sessionCode={sessionCode} votingStyle={sessionVotingStyle} />
           </div>
         ) : activeResume ? (
           <>
             <div className="resume-toolbar">
-              <h2>{activeResume.original_name}</h2>
+              <input
+                className="candidate-name-input-lg"
+                value={getLocalName(activeResume)}
+                onChange={e => setLocalNames(prev => ({ ...prev, [activeResume.id]: e.target.value }))}
+                onBlur={e => {
+                  saveCandidateName(activeResume.id, e.target.value)
+                  setLocalNames(prev => { const n = { ...prev }; delete n[activeResume.id]; return n })
+                }}
+                onKeyDown={e => e.key === 'Enter' && e.target.blur()}
+                placeholder={activeResume.original_name}
+              />
 
               <div className="controls-row">
                 {!votingOpen && !activeResume.revealed && (
@@ -320,7 +342,7 @@ export default function Moderator() {
                   ))}
                 </div>
                 {activeResume.average != null && (
-                  <span className="avg">Avg: {activeResume.average}</span>
+                  <span className="avg">Avg: {formatAvg(activeResume.average, sessionVotingStyle)}</span>
                 )}
               </div>
             )}
@@ -342,7 +364,7 @@ export default function Moderator() {
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             {reviewed.length > 0 ? (
               <div style={{ flex: 1, overflowY: 'auto' }}>
-                <Leaderboard resumes={resumes} sessionCode={sessionCode} />
+                <Leaderboard resumes={resumes} sessionCode={sessionCode} votingStyle={sessionVotingStyle} />
               </div>
             ) : (
               <div className="empty-main">

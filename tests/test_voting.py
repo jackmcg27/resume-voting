@@ -71,6 +71,45 @@ def test_submit_vote_rejects_invalid_score(client, session_code, resume_id, scor
     assert resp.status_code == 400
 
 
+def test_thumbs_style_accepts_0_and_1(client, tmp_path):
+    code = client.post("/api/sessions", json={"name": "T", "voting_style": "thumbs"}).json()["code"]
+    rid = client.post(
+        f"/api/sessions/{code}/resumes",
+        files={"file": ("r.pdf", MINIMAL_PDF, "application/pdf")},
+    ).json()["id"]
+    client.post(f"/api/sessions/{code}/resumes/{rid}/activate")
+    client.post(f"/api/sessions/{code}/voting/open")
+
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "A", "score": 1}).status_code == 200
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "B", "score": 0}).status_code == 200
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "C", "score": 2}).status_code == 400
+
+
+def test_numeric_style_accepts_1_to_10(client, tmp_path):
+    code = client.post("/api/sessions", json={"name": "T", "voting_style": "numeric"}).json()["code"]
+    rid = client.post(
+        f"/api/sessions/{code}/resumes",
+        files={"file": ("r.pdf", MINIMAL_PDF, "application/pdf")},
+    ).json()["id"]
+    client.post(f"/api/sessions/{code}/resumes/{rid}/activate")
+    client.post(f"/api/sessions/{code}/voting/open")
+
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "A", "score": 10}).status_code == 200
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "B", "score": 0}).status_code == 400
+    assert client.post(f"/api/sessions/{code}/vote", json={"panelist_name": "C", "score": 11}).status_code == 400
+
+
+def test_invalid_voting_style_rejected(client):
+    resp = client.post("/api/sessions", json={"name": "T", "voting_style": "emoji"})
+    assert resp.status_code == 400
+
+
+def test_voting_style_in_session_view(client):
+    code = client.post("/api/sessions", json={"name": "T", "voting_style": "numeric"}).json()["code"]
+    session = client.get(f"/api/sessions/{code}").json()
+    assert session["voting_style"] == "numeric"
+
+
 def test_submit_vote_rejected_when_voting_closed(client, session_code, resume_id):
     client.post(f"/api/sessions/{session_code}/resumes/{resume_id}/activate")
     resp = client.post(

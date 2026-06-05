@@ -3,6 +3,75 @@ import PDFViewer from '../components/PDFViewer'
 import StarRating from '../components/StarRating'
 import { useSessionWS } from '../hooks/useSessionWS'
 
+function ThumbsInput({ value, onChange, disabled }) {
+  return (
+    <div className="thumbs-rating">
+      <button
+        type="button"
+        className={value === 1 ? 'selected' : ''}
+        onClick={() => !disabled && onChange?.(1)}
+        disabled={disabled}
+        title="Thumbs up"
+      >
+        👍
+      </button>
+      <button
+        type="button"
+        className={value === 0 ? 'selected' : ''}
+        onClick={() => !disabled && onChange?.(0)}
+        disabled={disabled}
+        title="Thumbs down"
+      >
+        👎
+      </button>
+    </div>
+  )
+}
+
+function NumericInput({ value, onChange, disabled }) {
+  return (
+    <div className="numeric-rating">
+      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+        <button
+          key={n}
+          type="button"
+          className={n === value ? 'selected' : ''}
+          onClick={() => !disabled && onChange?.(n)}
+          disabled={disabled}
+          title={`Score ${n}`}
+        >
+          {n}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function VotingInput({ style, value, onChange, disabled }) {
+  if (style === 'thumbs') return <ThumbsInput value={value} onChange={onChange} disabled={disabled} />
+  if (style === 'numeric') return <NumericInput value={value} onChange={onChange} disabled={disabled} />
+  return <StarRating value={value ?? 0} onChange={onChange} disabled={disabled} />
+}
+
+function scoreDisplay(score, style) {
+  if (style === 'thumbs') return score === 1 ? '👍' : '👎'
+  if (style === 'numeric') return `${score} / 10`
+  return '★'.repeat(score) + '☆'.repeat(5 - score)
+}
+
+function avgDisplay(avg, style) {
+  if (avg == null) return null
+  if (style === 'thumbs') return `${Math.round(avg * 100)}% thumbs up`
+  if (style === 'numeric') return `${avg} / 10`
+  return `${avg} / 5`
+}
+
+function hintText(style) {
+  if (style === 'thumbs') return 'Give a thumbs up or thumbs down'
+  if (style === 'numeric') return 'Select a score from 1 to 10'
+  return 'Select a score from 1 to 5 stars'
+}
+
 export default function Join() {
   const [nameInput, setNameInput] = useState('')
   const [codeInput, setCodeInput] = useState('')
@@ -98,6 +167,7 @@ export default function Join() {
   const myVote = activeResume ? myVotes[activeResume.id] : null
   const hasVoted = myVote != null
   const voters = activeResume?.voters ?? []
+  const style = session?.voting_style ?? 'stars'
 
   return (
     <div className="panelist-layout">
@@ -131,14 +201,14 @@ export default function Join() {
             <>
               <div className="resume-title">
                 <div className="label">Current Resume</div>
-                <div>{activeResume.original_name}</div>
+                <div>{activeResume.candidate_name || activeResume.original_name}</div>
               </div>
 
               {votingOpen && !activeResume.revealed && (
                 hasVoted ? (
                   <div className="voted-card">
                     <h3>Vote Submitted</h3>
-                    <div className="your-score">{'★'.repeat(myVote)}{'☆'.repeat(5 - myVote)}</div>
+                    <div className="your-score">{scoreDisplay(myVote, style)}</div>
                     <div className="waiting">
                       <div style={{ marginBottom: 6 }}>{voteCount} / {totalPanelists} submitted</div>
                       <div className="progress-bar-wrap">
@@ -157,10 +227,11 @@ export default function Join() {
                 ) : (
                   <div className="voting-card">
                     <h3>Rate this candidate</h3>
-                    <p className="hint">Select a score from 1 to 5 stars</p>
-                    <StarRating
-                      value={myVote ?? 0}
-                      onChange={(score) => submitVote(score)}
+                    <p className="hint">{hintText(style)}</p>
+                    <VotingInput
+                      style={style}
+                      value={myVote}
+                      onChange={score => submitVote(score)}
                       disabled={submitting}
                     />
                     <p className="hint" style={{ fontSize: 11 }}>
@@ -180,13 +251,13 @@ export default function Join() {
                 <div className="results-card">
                   <h3>Results</h3>
                   {activeResume.average != null && (
-                    <div className="avg">{activeResume.average} / 5</div>
+                    <div className="avg">{avgDisplay(activeResume.average, style)}</div>
                   )}
                   <div className="scores-list">
                     {Object.entries(activeResume.votes).sort().map(([pName, score]) => (
                       <div key={pName} className="score-row">
                         <span>{pName}{pName === name ? ' (you)' : ''}</span>
-                        <span className="stars">{'★'.repeat(score)}{'☆'.repeat(5 - score)}</span>
+                        <span className="stars">{scoreDisplay(score, style)}</span>
                       </div>
                     ))}
                   </div>

@@ -1,4 +1,21 @@
-export default function Leaderboard({ resumes, sessionCode }) {
+function formatScore(score, style) {
+  if (style === 'thumbs') return score === 1 ? '👍' : '👎'
+  if (style === 'numeric') return score
+  return '★'.repeat(score) + '☆'.repeat(5 - score)
+}
+
+function formatAvg(avg, style) {
+  if (style === 'thumbs') return `${Math.round(avg * 100)}%`
+  return avg
+}
+
+function avgHeader(style) {
+  if (style === 'thumbs') return '% Up'
+  if (style === 'numeric') return 'Avg (1–10)'
+  return 'Avg (1–5)'
+}
+
+export default function Leaderboard({ resumes, sessionCode, votingStyle = 'stars' }) {
   const reviewed = resumes
     .filter(r => r.revealed)
     .map(r => ({ ...r, average: r.average ?? 0 }))
@@ -25,22 +42,22 @@ export default function Leaderboard({ resumes, sessionCode }) {
             <th>#</th>
             <th>Candidate</th>
             {allPanelists.map(p => <th key={p}>{p}</th>)}
-            <th>Average</th>
+            <th>{avgHeader(votingStyle)}</th>
           </tr>
         </thead>
         <tbody>
           {reviewed.map((r, i) => (
             <tr key={r.id}>
               <td><span className={`lb-rank ${rankClass(i)}`}>#{i + 1}</span></td>
-              <td>{r.original_name}</td>
+              <td>{r.candidate_name || r.original_name}</td>
               {allPanelists.map(p => (
                 <td key={p}>
                   {r.votes?.[p] != null
-                    ? <span className="lb-stars">{'★'.repeat(r.votes[p])}{'☆'.repeat(5 - r.votes[p])}</span>
+                    ? <span className="lb-stars">{formatScore(r.votes[p], votingStyle)}</span>
                     : <span style={{ color: 'var(--gray-300)' }}>-</span>}
                 </td>
               ))}
-              <td><span className="lb-avg">{r.average}</span></td>
+              <td><span className="lb-avg">{formatAvg(r.average, votingStyle)}</span></td>
             </tr>
           ))}
         </tbody>

@@ -166,50 +166,40 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 .queue-list { display: flex; flex-direction: column; gap: 4px; }
 
-.server-files-panel {
-  border: 1px solid var(--gray-200);
-  border-radius: var(--radius);
-  background: var(--gray-50);
-  margin-bottom: 10px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.server-files-empty {
-  padding: 10px 12px;
-  font-size: 12px;
-  color: var(--gray-400);
-  font-style: italic;
-}
-
-.server-file-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--gray-200);
-}
-.server-file-item:last-child { border-bottom: none; }
-
-.server-file-info {
+.candidate-name-input {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.server-file-name {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--gray-300);
+  border-radius: 0;
+  padding: 0 2px;
   font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: inherit;
+  outline: none;
+  transition: border-color .15s;
 }
+.candidate-name-input:hover { border-bottom-color: var(--gray-500); }
+.candidate-name-input:focus { border-bottom-color: var(--blue); }
+.candidate-name-input::placeholder { color: var(--gray-400); }
 
-.server-file-date {
-  font-size: 11px;
-  color: var(--gray-400);
+.candidate-name-input-lg {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--gray-300);
+  border-radius: 0;
+  padding: 0 4px 2px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: inherit;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  max-width: 420px;
 }
+.candidate-name-input-lg:hover { border-bottom-color: var(--gray-500); }
+.candidate-name-input-lg:focus { border-bottom-color: var(--blue); }
+.candidate-name-input-lg::placeholder { color: var(--gray-400); font-weight: 400; }
 
 .queue-group-label {
   font-size: 11px;
@@ -415,6 +405,61 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .lb-stars { color: var(--amber); letter-spacing: 1px; }
 
 .lb-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+/* ── Voting style picker (create session form) ── */
+.voting-style-picker { display: flex; flex-direction: column; gap: 6px; }
+.voting-style-label { font-size: 12px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: .5px; }
+.voting-style-options { display: flex; gap: 8px; }
+.voting-style-btn {
+  flex: 1;
+  padding: 8px 6px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  background: none;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .1s, border-color .1s;
+  white-space: nowrap;
+}
+.voting-style-btn:hover { background: var(--gray-100); }
+.voting-style-btn.selected { background: var(--blue-lt); border-color: var(--blue); color: var(--blue); font-weight: 600; }
+
+/* ── Thumbs Rating ── */
+.thumbs-rating { display: flex; gap: 20px; justify-content: center; margin: 8px 0; }
+.thumbs-rating button {
+  font-size: 2.8rem;
+  background: none;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: border-color .15s, transform .1s, background .1s;
+  line-height: 1;
+}
+.thumbs-rating button:hover:not(:disabled) { border-color: var(--gray-300); transform: scale(1.1); }
+.thumbs-rating button.selected { border-color: var(--blue); background: var(--blue-lt); }
+.thumbs-rating button:disabled { opacity: .5; cursor: default; }
+
+/* ── Numeric Rating ── */
+.numeric-rating {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 8px 0;
+}
+.numeric-rating button {
+  padding: 10px 4px;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  background: none;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .1s, border-color .1s, color .1s;
+}
+.numeric-rating button:hover:not(:disabled) { background: var(--gray-100); }
+.numeric-rating button.selected { background: var(--blue); border-color: var(--blue); color: #fff; }
+.numeric-rating button:disabled { opacity: .5; cursor: default; }
 
 /* ── Star Rating ── */
 .star-rating {

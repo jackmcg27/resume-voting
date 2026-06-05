@@ -15,6 +15,7 @@ class Resume:
     id: str
     filename: str
     original_name: str
+    candidate_name: str = ""
     votes: Dict[str, int] = field(default_factory=dict)
     revealed: bool = False
 
@@ -23,6 +24,7 @@ class Resume:
 class Session:
     code: str
     name: str = ""
+    voting_style: str = "stars"
     resumes: List[Resume] = field(default_factory=list)
     panelists: Dict[str, Panelist] = field(default_factory=dict)
     active_resume_id: Optional[str] = None
@@ -53,6 +55,7 @@ def resume_view(resume: Resume, active_id: Optional[str]) -> dict:
         "id": resume.id,
         "filename": resume.filename,
         "original_name": resume.original_name,
+        "candidate_name": resume.candidate_name,
         "status": status,
         "voters": sorted(resume.votes.keys()),
         "votes": votes,
@@ -66,6 +69,7 @@ def session_view(session: Session) -> dict:
     return {
         "code": session.code,
         "name": session.name,
+        "voting_style": session.voting_style,
         "resumes": [resume_view(r, session.active_resume_id) for r in session.resumes],
         "panelists": sorted(session.panelists.keys()),
         "active_resume_id": session.active_resume_id,

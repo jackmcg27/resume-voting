@@ -39,8 +39,10 @@ async def submit_vote(code: str, body: VoteBody):
         raise HTTPException(404, "Session not found")
     if not session.voting_open:
         raise HTTPException(400, "Voting is not open")
-    if not 1 <= body.score <= 5:
-        raise HTTPException(400, "Score must be between 1 and 5")
+    valid_ranges = {"stars": (1, 5), "numeric": (1, 10), "thumbs": (0, 1)}
+    lo, hi = valid_ranges.get(session.voting_style, (1, 5))
+    if not lo <= body.score <= hi:
+        raise HTTPException(400, f"Score must be between {lo} and {hi} for style '{session.voting_style}'")
 
     resume = next((r for r in session.resumes if r.id == session.active_resume_id), None)
     if not resume:
@@ -89,7 +91,7 @@ async def get_results(code: str):
         if resume.revealed and resume.votes:
             avg = sum(resume.votes.values()) / len(resume.votes)
             rows.append({
-                "name": resume.original_name,
+                "name": resume.candidate_name or resume.original_name,
                 "votes": resume.votes,
                 "average": round(avg, 2),
             })
@@ -115,7 +117,7 @@ async def export_csv(code: str):
         scores = [resume.votes.get(p, "") for p in all_panelists]
         voted = [v for v in scores if v != ""]
         avg = round(sum(voted) / len(voted), 2) if voted else ""
-        writer.writerow([resume.original_name, *scores, avg])
+        writer.writerow([resume.candidate_name or resume.original_name, *scores, avg])
 
     output.seek(0)
     return StreamingResponse(

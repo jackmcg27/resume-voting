@@ -1,16 +1,29 @@
 import socketio as _socketio
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import STATIC_DIR
+from .config import STATIC_DIR, UPLOAD_DIR
 from .routers import admin, sessions, resumes, voting
 from .socket import sio
 from . import events  # noqa: F401 — registers socket.io event handlers
 
-_fastapi_app = FastAPI(title="Resume Voting")
+
+@asynccontextmanager
+async def lifespan(app):
+    if UPLOAD_DIR.exists():
+        for f in UPLOAD_DIR.iterdir():
+            try:
+                f.unlink()
+            except Exception:
+                pass
+    yield
+
+
+_fastapi_app = FastAPI(title="Resume Voting", lifespan=lifespan)
 
 _fastapi_app.add_middleware(
     CORSMiddleware,

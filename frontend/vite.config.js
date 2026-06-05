@@ -9,6 +9,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      '/api/auth': { target: 'http://localhost:3001', changeOrigin: true },
       '/api': 'http://localhost:8000',
       '/uploads': 'http://localhost:8000',
       '/socket.io': { target: 'http://localhost:8000', changeOrigin: true, ws: true },

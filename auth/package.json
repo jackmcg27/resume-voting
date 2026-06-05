@@ -1,0 +1,15 @@
+{
+  "name": "resume-voting-auth",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot index.ts",
+    "start": "bun index.ts",
+    "migrate": "bunx @better-auth/cli@latest migrate"
+  },
+  "dependencies": {
+    "better-auth": "^1.2.7",
+    "hono": "^4.7.10",
+    "kysely": "^0.27.5"
+  }
+}

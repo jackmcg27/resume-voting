@@ -43,4 +43,6 @@ async def spa(full_path: str):
 
 # Wrap FastAPI with socket.io — socket.io handles /socket.io/* and passes
 # everything else through to the FastAPI app.
+# fastapi_app is exported for tests that need to set dependency_overrides.
+fastapi_app = _fastapi_app
 app = _socketio.ASGIApp(sio, other_asgi_app=_fastapi_app)

@@ -1,8 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import app, fastapi_app
 from app.store import sessions
+from app.routers.admin import require_admin
 
 # Smallest valid-enough PDF for upload tests — the server stores whatever bytes it receives
 MINIMAL_PDF = b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n%%EOF"
@@ -18,9 +19,11 @@ def clear_store():
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """TestClient with UPLOAD_DIR redirected to a temp directory."""
+    """TestClient with UPLOAD_DIR redirected to a temp directory and admin auth bypassed."""
+    fastapi_app.dependency_overrides[require_admin] = lambda: {"name": "Test Admin", "email": "admin@test.com"}
     monkeypatch.setattr("app.routers.resumes.UPLOAD_DIR", tmp_path)
-    return TestClient(app)
+    yield TestClient(app)
+    fastapi_app.dependency_overrides.pop(require_admin, None)
 
 
 @pytest.fixture

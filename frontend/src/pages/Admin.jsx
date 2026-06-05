@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { authClient } from '../lib/auth-client'
 import Leaderboard from '../components/Leaderboard'
 
 function StatusBadge({ session }) {
@@ -83,9 +84,35 @@ function SessionRow({ session }) {
   )
 }
 
+function LoginGate() {
+  const [signingIn, setSigningIn] = useState(false)
+
+  async function handleSignIn() {
+    setSigningIn(true)
+    await authClient.signIn.social({ provider: 'gitlab', callbackURL: '/admin' })
+  }
+
+  return (
+    <div className="admin-layout">
+      <header className="admin-header">
+        <h1>Admin</h1>
+      </header>
+      <div className="admin-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 80 }}>
+        <p style={{ color: 'var(--gray-500)', marginBottom: 8 }}>
+          Sign in with your GitLab account to access the admin panel.
+        </p>
+        <button className="btn-primary" onClick={handleSignIn} disabled={signingIn}>
+          {signingIn ? 'Redirecting…' : 'Sign in with GitLab'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Admin() {
+  const { data: authSession, isPending: authPending } = authClient.useSession()
   const [sessions, setSessions] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   async function load() {
@@ -93,6 +120,8 @@ export default function Admin() {
     setError(null)
     try {
       const res = await fetch('/api/admin/sessions')
+      if (res.status === 401) throw new Error('Session expired — sign out and back in')
+      if (res.status === 403) throw new Error('Your GitLab account is not in the required group')
       if (!res.ok) throw new Error('Failed to load sessions')
       setSessions(await res.json())
     } catch (e) {
@@ -102,13 +131,27 @@ export default function Admin() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    if (authSession) load()
+  }, [authSession])
+
+  if (authPending) {
+    return <div className="admin-layout"><p className="admin-empty">Loading…</p></div>
+  }
+
+  if (!authSession) {
+    return <LoginGate />
+  }
 
   return (
     <div className="admin-layout">
       <header className="admin-header">
         <h1>Admin - All Sessions</h1>
-        <button className="btn-ghost btn-sm" onClick={load}>Refresh</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>{authSession.user.email}</span>
+          <button className="btn-ghost btn-sm" onClick={load}>Refresh</button>
+          <button className="btn-ghost btn-sm" onClick={() => authClient.signOut()}>Sign out</button>
+        </div>
       </header>
 
       <div className="admin-body">

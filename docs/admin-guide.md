@@ -10,7 +10,17 @@ Navigate to:
 http://<hostname>:8000/admin
 ```
 
-No login is required. Access is controlled by network — only machines that can reach the server can open this page.
+The admin page requires a GitLab login. Only members of the configured GitLab group are granted access.
+
+### Signing in
+
+Click **Sign in with GitLab**. You will be redirected to GitLab to authorise the app. After approving, you are returned to the admin page automatically.
+
+If your GitLab account is not in the required group, you will see an error after signing in. Contact whoever manages the GitLab group to request access.
+
+### Signing out
+
+Click **Sign out** in the top bar. Your session is cleared immediately.
 
 ## What it shows
 
